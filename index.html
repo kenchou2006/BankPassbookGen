@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>電子存摺產生器</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- html2pdf.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f5f5f5;
+        }
+
+        /* 針對 PDF 擷取的專用樣式 */
+        .pdf-capture-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0;
+            margin: 0;
+        }
+
+        .is-generating-pdf .pdf-capture-container {
+            line-height: 0 !important;
+            font-size: 0 !important;
+            gap: 0 !important;
+        }
+
+        .passbook-page {
+            width: 210mm;
+            height: 296.5mm; 
+            box-sizing: border-box;
+            overflow: hidden;
+            background-color: #ffffff;
+            color: #000 !important;
+            font-family: "PMingLiU", "新細明體", "MingLiU", serif !important;
+            position: relative;
+            border-radius: 0 !important;
+            margin: 0;
+            padding: 0;
+            line-height: normal; 
+            font-size: 16px;
+            display: block;
+        }
+
+        .pdf-capture-container:not(.is-generating-pdf) .passbook-page {
+            margin-bottom: 40px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+
+        .passbook-page *, .passbook-page div, .passbook-page span, .passbook-page p, .passbook-page img {
+            font-family: inherit !important;
+            color: inherit !important;
+            border-radius: 0 !important;
+        }
+
+        .bank-logo-box {
+            width: 16mm;
+            height: 16mm;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            background-color: #fff;
+            filter: grayscale(100%);
+            opacity: 0.9;
+        }
+
+        /* 捲軸美化 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #ddd; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #ccc; }
+
+        .html2pdf__page-break {
+            page-break-after: always;
+            height: 0;
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <div class="p-4 md:p-8">
+        <!-- 使用者操作介面 UI -->
+        <div class="max-w-7xl mx-auto mb-12 bg-white shadow-xl border border-neutral-200 overflow-hidden rounded-[2rem]">
+            <!-- 頂部深色 Header -->
+            <div class="bg-[#222] p-8 text-white flex flex-col md:flex-row justify-between items-center gap-6">
+                <div class="flex items-center gap-5">
+                    <div id="logo-trigger" class="relative w-16 h-16 bg-[#333] rounded-2xl flex items-center justify-center cursor-pointer hover:bg-[#444] transition-all border border-neutral-700 overflow-hidden group">
+                        <div id="logo-preview-icon"><i data-lucide="landmark" class="text-neutral-500 w-8 h-8"></i></div>
+                        <img id="logo-preview-img" class="hidden w-full h-full object-contain p-1" src="" alt="Logo">
+                        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                            <i data-lucide="upload" class="w-5 h-5 text-white"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <h1 class="text-2xl font-bold tracking-tight">電子存摺產生器</h1>
+                        <p class="text-[10px] text-neutral-500 font-mono uppercase tracking-[0.2em] mt-1">PASSBOOK GENERATOR</p>
+                    </div>
+                    <input type="file" id="logo-input" class="hidden" accept="image/*">
+                    <input type="file" id="json-import-input" class="hidden" accept="application/json">
+                </div>
+
+                <div class="flex flex-wrap justify-center gap-3 w-full md:w-auto">
+                    <button onclick="document.getElementById('json-import-input').click()" class="px-5 py-2.5 bg-[#333] hover:bg-[#444] rounded-xl text-sm font-bold transition-all flex items-center gap-2 border border-neutral-700 shadow-sm">
+                        <i data-lucide="file-up" class="w-4 h-4"></i> 匯入
+                    </button>
+                    <button onclick="exportJSON()" class="px-5 py-2.5 bg-[#333] hover:bg-[#444] rounded-xl text-sm font-bold transition-all flex items-center gap-2 border border-neutral-700 shadow-sm">
+                        <i data-lucide="save" class="w-4 h-4"></i> 匯出
+                    </button>
+                    <button onclick="clearAll()" class="px-5 py-2.5 bg-[#333] hover:bg-[#444] rounded-xl text-sm font-bold transition-all flex items-center gap-2 border border-neutral-700 shadow-sm">
+                        <i data-lucide="eraser" class="w-4 h-4"></i> 清除
+                    </button>
+                    <button id="download-btn" onclick="generatePDF()" class="px-7 py-2.5 bg-[#333] hover:bg-[#444] text-white rounded-xl text-sm font-bold transition-all shadow-lg flex items-center justify-center gap-2 border border-neutral-700">
+                        <i data-lucide="download" class="w-5 h-5"></i> 下載 PDF
+                    </button>
+                </div>
+            </div>
+
+            <!-- 參數設定區 -->
+            <div class="p-10 grid grid-cols-1 md:grid-cols-12 gap-8 border-b border-neutral-100">
+                <div class="md:col-span-4 space-y-4">
+                    <label class="text-[12px] font-bold text-neutral-400 uppercase tracking-wider block">銀行名稱</label>
+                    <input type="text" id="bankName" class="w-full bg-neutral-50 border border-neutral-100 rounded-xl px-4 py-3 focus:bg-white focus:ring-2 focus:ring-neutral-200 outline-none transition-all" value="中國信託商業銀行">
+                    <div class="flex gap-2">
+                        <input type="text" id="bankNameEn" class="flex-grow bg-neutral-50 border border-neutral-100 rounded-xl px-4 py-2 focus:bg-white focus:ring-2 focus:ring-neutral-200 outline-none text-xs text-neutral-500 uppercase tracking-tighter" value="CTBC Bank">
+                        <input type="text" id="subLabel" class="w-24 bg-neutral-50 border border-neutral-100 rounded-xl px-4 py-2 focus:bg-white focus:ring-2 focus:ring-neutral-200 outline-none text-xs text-neutral-500" value="" placeholder="| 標記">
+                    </div>
+                </div>
+                
+                <div class="md:col-span-5 space-y-4">
+                    <label class="text-[12px] font-bold text-neutral-400 uppercase tracking-wider block">帳戶資訊</label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <input type="text" id="accountNumber" class="w-full bg-neutral-50 border border-neutral-100 rounded-xl px-4 py-3 focus:bg-white focus:ring-2 focus:ring-neutral-200 outline-none font-mono" value="958340243542" placeholder="帳號">
+                        <input type="text" id="accountName" class="w-full bg-neutral-50 border border-neutral-100 rounded-xl px-4 py-3 focus:bg-white focus:ring-2 focus:ring-neutral-200 outline-none font-medium" value="周恭煥" placeholder="戶名">
+                    </div>
+                    <input type="number" id="initialBalance" class="w-full bg-neutral-50 border border-neutral-100 rounded-xl px-4 py-3 focus:bg-white focus:ring-2 focus:ring-neutral-200 outline-none font-mono text-lg font-bold" value="0" placeholder="起始餘額">
+                </div>
+
+                <div class="md:col-span-3 space-y-4">
+                    <label class="text-[12px] font-bold text-neutral-400 uppercase tracking-wider block flex items-center gap-1"><i data-lucide="clock" class="w-4 h-4"></i> 列印設定</label>
+                    <input type="text" id="printTime" class="w-full bg-neutral-50 border border-neutral-100 rounded-xl px-4 py-3 focus:bg-white focus:ring-2 focus:ring-neutral-200 outline-none font-mono">
+                    <button id="toggle-gray-bg" onclick="toggleGrayBg()" class="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-white hover:border-neutral-300 shadow-sm">
+                        <i data-lucide="layers" class="w-4 h-4"></i> 灰底已關閉
+                    </button>
+                </div>
+            </div>
+
+            <!-- 交易表格編輯區 -->
+            <div class="p-10 pt-6">
+                <div class="bg-neutral-50 rounded-[1.5rem] border border-neutral-100 overflow-hidden shadow-inner max-h-[500px] overflow-y-auto">
+                    <table class="w-full text-sm font-sans border-collapse">
+                        <thead class="bg-[#f9f9f9] border-b border-neutral-100 sticky top-0 z-10">
+                            <tr class="text-neutral-400 text-[11px] font-bold uppercase text-left">
+                                <th class="p-5 w-16 text-center">行次</th>
+                                <th class="p-5 w-32">日期</th>
+                                <th class="p-5 text-right">提出</th>
+                                <th class="p-5 text-right">存入</th>
+                                <th class="p-5">說明</th>
+                                <th class="p-5">備註</th>
+                                <th class="p-5 w-16"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="transaction-rows">
+                            <!-- JS 渲染內容 -->
+                        </tbody>
+                    </table>
+                </div>
+                <button onclick="addRow()" class="mt-6 px-10 py-3 bg-[#111] text-white rounded-full text-sm font-bold hover:bg-neutral-800 transition-all flex items-center gap-2 shadow-xl">
+                    <i data-lucide="plus" class="w-5 h-5"></i> 新增明細
+                </button>
+            </div>
+        </div>
+
+        <!-- PDF 預覽區 -->
+        <div id="print-area" class="pdf-capture-container">
+            <!-- JS 渲染內容 -->
+        </div>
+    </div>
+
+    <script>
+        // 初始狀態
+        let state = {
+            bankLogo: null,
+            showGrayBg: false,
+            accountInfo: {
+                bankName: '中國信託商業銀行',
+                bankNameEn: 'CTBC Bank',
+                subLabel: '',
+                accountNumber: '958340243542',
+                accountName: '周恭煥',
+                initialBalance: 0,
+                printTime: getInitialPrintTime()
+            },
+            transactions: [
+                { date: '114/08/04', withdrawal: '', deposit: '5000', description: '網銀轉帳', remarks: '(013)0000218***340305周*煥' },
+                { date: '114/08/08', withdrawal: '', deposit: '22077', description: '網銀轉帳', remarks: '(013)0000218***012642周*煥' },
+                { date: '114/08/08', withdrawal: '', deposit: '4200', description: 'ATM存', remarks: '0130VH74' },
+                { date: '114/08/08', withdrawal: '', deposit: '30', description: 'ATM存', remarks: '0130VH74' },
+                { date: '114/08/18', withdrawal: '100', deposit: '', description: '電子轉出', remarks: '(807)0012105948396812' },
+                { date: '114/08/18', withdrawal: '-100', deposit: '', description: '錯誤更正', remarks: '(807)0012105948396812' }
+            ]
+        };
+
+        // 民國日期處理工具
+        function getROCNowDate() {
+            const now = new Date();
+            const rocYear = now.getFullYear() - 1911;
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            return `${rocYear}/${month}/${day}`;
+        }
+
+        function getInitialPrintTime() {
+            const now = new Date();
+            const rocYear = now.getFullYear() - 1911;
+            const timeStr = now.toTimeString().split(' ')[0];
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            return `${rocYear}-${month}-${day} ${timeStr}`;
+        }
+
+        // 初始化
+        function init() {
+            lucide.createIcons();
+            document.getElementById('printTime').value = state.accountInfo.printTime;
+            
+            // 綁定輸入事件
+            const inputs = ['bankName', 'bankNameEn', 'subLabel', 'accountNumber', 'accountName', 'initialBalance', 'printTime'];
+            inputs.forEach(id => {
+                document.getElementById(id).addEventListener('input', (e) => {
+                    state.accountInfo[id] = e.target.value;
+                    render();
+                });
+            });
+
+            // Logo 上傳
+            document.getElementById('logo-trigger').addEventListener('click', () => document.getElementById('logo-input').click());
+            document.getElementById('logo-input').addEventListener('change', handleLogoUpload);
+
+            // 匯入 JSON
+            document.getElementById('json-import-input').addEventListener('change', handleImportJSON);
+
+            render();
+        }
+
+        function handleLogoUpload(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (upload) => {
+                    state.bankLogo = upload.target.result;
+                    render();
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function addRow() {
+            const lastDate = state.transactions.length > 0 ? state.transactions[state.transactions.length - 1].date : getROCNowDate();
+            state.transactions.push({ date: lastDate, withdrawal: '', deposit: '', description: '', remarks: '' });
+            render();
+        }
+
+        function removeRow(index) {
+            state.transactions.splice(index, 1);
+            render();
+        }
+
+        function updateRow(index, field, value) {
+            if (field === 'withdrawal' && value !== '') state.transactions[index].deposit = '';
+            if (field === 'deposit' && value !== '') state.transactions[index].withdrawal = '';
+            state.transactions[index][field] = value;
+            render();
+        }
+
+        function toggleGrayBg() {
+            state.showGrayBg = !state.showGrayBg;
+            render();
+        }
+
+        function clearAll() {
+            state.transactions = [];
+            render();
+        }
+
+        function exportJSON() {
+            const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `存摺資料_${state.accountInfo.accountName}.json`;
+            link.click();
+        }
+
+        function handleImportJSON(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const data = JSON.parse(event.target.result);
+                    state = data;
+                    // 同步輸入框
+                    document.getElementById('bankName').value = state.accountInfo.bankName || '';
+                    document.getElementById('bankNameEn').value = state.accountInfo.bankNameEn || '';
+                    document.getElementById('subLabel').value = state.accountInfo.subLabel || '';
+                    document.getElementById('accountNumber').value = state.accountInfo.accountNumber || '';
+                    document.getElementById('accountName').value = state.accountInfo.accountName || '';
+                    document.getElementById('initialBalance').value = state.accountInfo.initialBalance || 0;
+                    document.getElementById('printTime').value = state.accountInfo.printTime || '';
+                    render();
+                } catch (e) { alert("匯入失敗"); }
+            };
+            reader.readAsText(file);
+            e.target.value = null;
+        }
+
+        // 渲染核心
+        function render() {
+            renderEditTable();
+            renderPDFPreview();
+            
+            // 更新 UI 按鈕狀態
+            const btn = document.getElementById('toggle-gray-bg');
+            btn.innerHTML = `<i data-lucide="layers" class="w-4 h-4"></i> ${state.showGrayBg ? '灰底已開啟' : '灰底已關閉'}`;
+            btn.className = `w-full flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all border ${state.showGrayBg ? 'bg-[#1a1a1a] text-white border-[#1a1a1a]' : 'bg-neutral-50 text-neutral-600 border-neutral-200 hover:bg-white hover:border-neutral-300 shadow-sm'}`;
+            
+            // 更新 Logo 預覽
+            if (state.bankLogo) {
+                document.getElementById('logo-preview-img').src = state.bankLogo;
+                document.getElementById('logo-preview-img').classList.remove('hidden');
+                document.getElementById('logo-preview-icon').classList.add('hidden');
+            } else {
+                document.getElementById('logo-preview-img').classList.add('hidden');
+                document.getElementById('logo-preview-icon').classList.remove('hidden');
+            }
+
+            lucide.createIcons();
+        }
+
+        function renderEditTable() {
+            const tbody = document.getElementById('transaction-rows');
+            tbody.innerHTML = '';
+            state.transactions.forEach((tx, idx) => {
+                const tr = document.createElement('tr');
+                tr.className = "border-b border-neutral-100 bg-white hover:bg-[#fafafa] transition-colors";
+                tr.innerHTML = `
+                    <td class="p-4 text-center text-neutral-300 font-mono text-xs">${(idx % 22) + 1}</td>
+                    <td class="p-4"><input type="text" value="${tx.date}" oninput="updateRow(${idx}, 'date', this.value)" class="w-full text-center bg-transparent border-none p-1 focus:bg-neutral-100 rounded-lg outline-none"></td>
+                    <td class="p-4"><input type="number" value="${tx.withdrawal}" oninput="updateRow(${idx}, 'withdrawal', this.value)" class="w-full text-right bg-transparent border-none p-1 font-mono text-red-600 outline-none"></td>
+                    <td class="p-4"><input type="number" value="${tx.deposit}" oninput="updateRow(${idx}, 'deposit', this.value)" class="w-full text-right bg-transparent border-none p-1 font-mono text-blue-700 outline-none font-bold"></td>
+                    <td class="p-4"><input type="text" value="${tx.description}" oninput="updateRow(${idx}, 'description', this.value)" class="w-full bg-transparent border-none p-1 outline-none"></td>
+                    <td class="p-4"><input type="text" value="${tx.remarks}" oninput="updateRow(${idx}, 'remarks', this.value)" class="w-full bg-transparent border-none p-1 text-xs outline-none"></td>
+                    <td class="p-4 text-center">
+                        <button onclick="removeRow(${idx})" class="w-9 h-9 bg-[#222] text-white flex items-center justify-center rounded-xl hover:bg-red-600 transition-all shadow-md">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderPDFPreview() {
+            const container = document.getElementById('print-area');
+            container.innerHTML = '';
+
+            // 計算處理數據
+            let currentBalance = parseFloat(state.accountInfo.initialBalance || 0);
+            const processed = state.transactions.map((tx, idx) => {
+                const w = parseFloat(tx.withdrawal || 0);
+                const d = parseFloat(tx.deposit || 0);
+                currentBalance = currentBalance - w + d;
+                return { ...tx, displayBalance: currentBalance.toLocaleString(), rowNum: (idx % 22) + 1, pageIndex: Math.floor(idx / 22) };
+            });
+
+            const pageCount = Math.max(1, Math.ceil(processed.length / 22));
+            for (let p = 0; p < pageCount; p++) {
+                const pageData = processed.filter(tx => tx.pageIndex === p);
+                const pageEl = document.createElement('div');
+                pageEl.className = 'passbook-page';
+                
+                let rowsHtml = '';
+                for (let r = 0; r < 22; r++) {
+                    const row = pageData[r];
+                    const isEven = (r + 1) % 2 === 0;
+                    const bgClass = state.showGrayBg && isEven ? 'bg-neutral-50' : 'bg-white';
+                    rowsHtml += `
+                        <div class="grid grid-cols-[55px_85px_95px_95px_110px_100px_1fr] text-[12px] h-[38.5px] items-center border-b border-neutral-300 ${r === 21 ? 'last:border-b-neutral-400' : ''} ${bgClass}">
+                            <div class="p-2 text-center text-neutral-600">${row ? row.rowNum : ''}</div>
+                            <div class="p-2 text-center text-neutral-800">${row?.date || ''}</div>
+                            <div class="p-2 text-right pr-3 text-neutral-800">${row?.withdrawal ? parseFloat(row.withdrawal).toLocaleString() : ''}</div>
+                            <div class="p-2 text-right pr-3 text-neutral-800">${row?.deposit ? parseFloat(row.deposit).toLocaleString() : ''}</div>
+                            <div class="p-2 text-right pr-3 font-bold text-neutral-900">${row?.displayBalance || ''}</div>
+                            <div class="p-2 text-center px-1 text-neutral-800 truncate">${row?.description || ''}</div>
+                            <div class="p-2 pl-3 text-[11px] text-neutral-700 break-all leading-tight">${row?.remarks || ''}</div>
+                        </div>
+                    `;
+                }
+
+                pageEl.innerHTML = `
+                    <div class="flex flex-col h-full p-[18mm]">
+                        <div class="flex justify-between items-start pb-4 mb-5">
+                            <div class="flex items-center gap-5">
+                                ${state.bankLogo ? `<div class="bank-logo-box"><img src="${state.bankLogo}" class="w-full h-full object-contain"></div>` : ''}
+                                <div>
+                                    <h2 class="text-[22px] font-bold tracking-tighter text-neutral-900 mb-1">${state.accountInfo.bankName} <span class="font-normal text-neutral-700 text-[16px] ml-1">${state.accountInfo.subLabel}</span></h2>
+                                    <p class="text-[10px] text-neutral-700 font-normal tracking-tight uppercase leading-none">${state.accountInfo.bankNameEn}</p>
+                                </div>
+                            </div>
+                            <div class="text-right text-neutral-800 pt-1">
+                                <p class="text-[14px] leading-none mb-2"><span class="font-bold">帳號:</span> <span class="ml-1 font-mono tracking-tighter">${state.accountInfo.accountNumber}</span></p>
+                                <p class="text-[14px] leading-none"><span class="font-bold">戶名:</span> <span class="ml-1">${state.accountInfo.accountName}</span></p>
+                            </div>
+                        </div>
+                        <div class="flex-grow flex flex-col bg-white overflow-hidden">
+                            <div class="grid grid-cols-[55px_85px_95px_95px_110px_100px_1fr] ${state.showGrayBg ? 'bg-neutral-100' : 'bg-white'} text-[13px] font-bold border-b border-neutral-400 text-neutral-900">
+                                <div class="p-2 text-center whitespace-nowrap">行次</div>
+                                <div class="p-2 text-center">日期</div>
+                                <div class="p-2 text-center">提出</div>
+                                <div class="p-2 text-center">存入</div>
+                                <div class="p-2 text-center">餘額</div>
+                                <div class="p-2 text-center">匯率</div>
+                                <div class="p-2 text-center">備註</div>
+                            </div>
+                            ${rowsHtml}
+                        </div>
+                        <div class="mt-6 flex justify-between items-end text-[11px] text-neutral-600">
+                            <p>列印時間：${state.accountInfo.printTime}</p>
+                            <div class="font-bold text-neutral-500">${p + 1}</div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(pageEl);
+                if (p < pageCount - 1) {
+                    const breakDiv = document.createElement('div');
+                    breakDiv.className = "html2pdf__page-break";
+                    container.appendChild(breakDiv);
+                }
+            }
+        }
+
+        async function generatePDF() {
+            const btn = document.getElementById('download-btn');
+            btn.disabled = true;
+            btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> 生成中...`;
+            
+            const area = document.getElementById('print-area');
+            area.classList.add('is-generating-pdf');
+
+            const opt = {
+                margin: 0,
+                filename: `存摺明細_${state.accountInfo.accountName}.pdf`,
+                image: { type: 'jpeg', quality: 1.0 },
+                html2canvas: { scale: 2.5, useCORS: true, letterRendering: true, backgroundColor: '#ffffff' },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                pagebreak: { mode: 'css', after: '.html2pdf__page-break' }
+            };
+
+            try {
+                await html2pdf().set(opt).from(area).save();
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<i data-lucide="download" class="w-5 h-5"></i> 下載 PDF`;
+                area.classList.remove('is-generating-pdf');
+            }
+        }
+
+        // 啟動
+        window.onload = init;
+    </script>
+</body>
+</html>
