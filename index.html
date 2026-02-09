@@ -103,7 +103,7 @@
                     </div>
                     <div>
                         <h1 class="text-2xl font-bold tracking-tight">電子存摺產生器</h1>
-                        <p class="text-[10px] text-neutral-500 font-mono uppercase tracking-[0.2em] mt-1">PASSBOOK GENERATOR</p>
+                        <p class="text-[10px] text-neutral-500 font-mono uppercase tracking-[0.2em] mt-1">PASSBOOK GENERATOR PRO</p>
                     </div>
                     <input type="file" id="logo-input" class="hidden" accept="image/*">
                     <input type="file" id="json-import-input" class="hidden" accept="application/json">
@@ -132,7 +132,7 @@
                     <input type="text" id="bankName" class="w-full bg-neutral-50 border border-neutral-100 rounded-xl px-4 py-3 focus:bg-white focus:ring-2 focus:ring-neutral-200 outline-none transition-all" value="中國信託商業銀行">
                     <div class="flex gap-2">
                         <input type="text" id="bankNameEn" class="flex-grow bg-neutral-50 border border-neutral-100 rounded-xl px-4 py-2 focus:bg-white focus:ring-2 focus:ring-neutral-200 outline-none text-xs text-neutral-500 uppercase tracking-tighter" value="CTBC Bank">
-                        <input type="text" id="subLabel" class="w-24 bg-neutral-50 border border-neutral-100 rounded-xl px-4 py-2 focus:bg-white focus:ring-2 focus:ring-neutral-200 outline-none text-xs text-neutral-500" value="" placeholder="| 標記">
+                        <input type="text" id="subLabel" class="w-32 bg-neutral-50 border border-neutral-100 rounded-xl px-4 py-2 focus:bg-white focus:ring-2 focus:ring-neutral-200 outline-none text-xs text-neutral-500" value="" placeholder="| 分行標記">
                     </div>
                 </div>
                 
@@ -162,8 +162,8 @@
                             <tr class="text-neutral-400 text-[11px] font-bold uppercase text-left">
                                 <th class="p-5 w-16 text-center">行次</th>
                                 <th class="p-5 w-32">日期</th>
-                                <th class="p-5 text-right">提出</th>
-                                <th class="p-5 text-right">存入</th>
+                                <th class="p-5 text-right">借方金額</th>
+                                <th class="p-5 text-right">貸方金額</th>
                                 <th class="p-5">說明</th>
                                 <th class="p-5">備註</th>
                                 <th class="p-5 w-16"></th>
@@ -307,7 +307,10 @@
             const reader = new FileReader();
             reader.onload = (event) => {
                 try {
-                    const data = JSON.parse(event.target.result);
+                    // 關鍵修正：解析前先移除 C-style 註解 (/* ... */) 與 單行註解 (// ...)
+                    const jsonContent = event.target.result.replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm, '$1');
+                    const data = JSON.parse(jsonContent);
+                    
                     state = data;
                     // 同步輸入框
                     document.getElementById('bankName').value = state.accountInfo.bankName || '';
@@ -318,7 +321,10 @@
                     document.getElementById('initialBalance').value = state.accountInfo.initialBalance || 0;
                     document.getElementById('printTime').value = state.accountInfo.printTime || '';
                     render();
-                } catch (e) { alert("匯入失敗"); }
+                } catch (err) { 
+                    console.error(err);
+                    alert("匯入失敗：檔案格式不正確或包含語法錯誤。"); 
+                }
             };
             reader.readAsText(file);
             e.target.value = null;
@@ -413,7 +419,7 @@
                             <div class="flex items-center gap-5">
                                 ${state.bankLogo ? `<div class="bank-logo-box"><img src="${state.bankLogo}" class="w-full h-full object-contain"></div>` : ''}
                                 <div>
-                                    <h2 class="text-[22px] font-bold tracking-tighter text-neutral-900 mb-1">${state.accountInfo.bankName} <span class="font-normal text-neutral-700 text-[16px] ml-1">${state.accountInfo.subLabel}</span></h2>
+                                    <h2 class="text-[22px] font-bold tracking-tighter text-neutral-900 mb-1">${state.accountInfo.bankName} <span class="font-normal text-neutral-700 text-[16px] ml-1">${state.accountInfo.subLabel || ''}</span></h2>
                                     <p class="text-[10px] text-neutral-700 font-normal tracking-tight uppercase leading-none">${state.accountInfo.bankNameEn}</p>
                                 </div>
                             </div>
@@ -426,8 +432,8 @@
                             <div class="grid grid-cols-[55px_85px_95px_95px_110px_100px_1fr] ${state.showGrayBg ? 'bg-neutral-100' : 'bg-white'} text-[13px] font-bold border-b border-neutral-400 text-neutral-900">
                                 <div class="p-2 text-center whitespace-nowrap">行次</div>
                                 <div class="p-2 text-center">日期</div>
-                                <div class="p-2 text-center">提出</div>
-                                <div class="p-2 text-center">存入</div>
+                                <div class="p-2 text-center">借方金額</div>
+                                <div class="p-2 text-center">貸方金額</div>
                                 <div class="p-2 text-center">餘額</div>
                                 <div class="p-2 text-center">匯率</div>
                                 <div class="p-2 text-center">備註</div>
